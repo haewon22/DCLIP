@@ -1,0 +1,5 @@
+*.pth
+
+checkpoints/
+data/
+evaluate_zs3.py

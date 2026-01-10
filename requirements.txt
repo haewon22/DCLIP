@@ -1,0 +1,18 @@
+torch>=1.10.0
+torchvision>=0.11.0
+numpy>=1.19.0
+Pillow>=8.0.0
+tqdm>=4.60.0
+scikit-learn>=0.24.0
+matplotlib>=3.4.0
+
+# CLIP (install from GitHub)
+# pip install git+https://github.com/openai/CLIP.git
+ftfy
+regex
+
+# For data augmentation
+# torchvision has RandAugment built-in since v0.11.0
+
+# Optional: for CUDA
+# Install PyTorch with CUDA support from https://pytorch.org/
