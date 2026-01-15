@@ -62,14 +62,14 @@ class Config:
     # MFI Loss (Sec. 4.2, Eq. 2)
     # λ = 0.2, α = 7e-5
     # ===================
-    mfi_lambda: float = 0.2
-    alpha: float = 7e-5             # Paper value
+    mfi_lambda: float = 0.1
+    alpha: float = 7e-4
     
     # ===================
     # Hard Negative Sampling (HNS)
     # Upweight hard negatives (negatives with high positive probability)
     # ===================
-    use_hns: bool = True           # Enable/disable HNS
+    use_hns: bool = False           # Enable/disable HNS
     hns_threshold: float = 0.5      # For threshold mode: negatives with prob > this are "hard"
     hns_weight: float = 2.0         # Weight multiplier for hard negatives
     hns_mode: str = "topk"     # "threshold", "topk", or "soft"

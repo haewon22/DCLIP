@@ -1,4 +1,17 @@
+cat > .gitignore << 'EOF'
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+outputs/
+
+*.csv
+*.ipynb_checkpoints/
+
 *.pth
 
 checkpoints/
 data/
+
+EOF
