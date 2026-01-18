@@ -96,64 +96,8 @@ def compute_surgery_map(
 
     surg_maps_u = _upsample_to(surg_maps, image_size)
     surg_maps_u = _minmax_norm(surg_maps_u)
-    # surg_maps_u = surg_maps_u * probs.unsqueeze(-1).unsqueeze(-1)
 
     return probs, surg_maps_u
-
-
-# def visualize_surgery(
-#     image_path: str,
-#     model,
-#     class_names: list,
-#     device: str = "cuda",
-#     top_k: int = 5,
-#     save_path: str = None,
-#     image_size: int = 448,
-#     tau_surgery: float = 2.0,
-# ):
-#     img_np, img_tensor = load_image(image_path, image_size=image_size)
-
-#     probs, surg_u = compute_surgery_map(
-#         model,
-#         img_tensor.to(device),
-#         image_size=image_size,
-#         tau_surgery=tau_surgery,
-#     )
-
-#     probs_np = probs[0].detach().cpu().numpy()
-#     top_idx = np.argsort(probs_np)[::-1][:top_k]
-
-#     fig, axes = plt.subplots(top_k, 2, figsize=(10, 3.6 * top_k))
-#     if top_k == 1:
-#         axes = np.expand_dims(axes, axis=0)
-
-#     axes[0, 0].set_title("Image", fontsize=13, fontweight="bold")
-#     axes[0, 1].set_title("top-k visualization", fontsize=13, fontweight="bold")
-
-#     for r, k in enumerate(top_idx):
-#         cname = class_names[k]
-#         p = float(probs_np[k])
-
-#         axes[r, 0].imshow(img_np)
-#         axes[r, 0].set_title(f"{cname} (P={p:.3f})", fontsize=12, fontweight="bold")
-#         axes[r, 0].axis("off")
-
-#         sur_map = surg_u[0, k].detach().cpu().numpy()
-#         _overlay(axes[r, 1], img_np, sur_map, title="")
-
-#     plt.tight_layout()
-
-#     if save_path:
-#         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-#         plt.savefig(save_path, dpi=200, bbox_inches="tight", facecolor="white")
-#         print(f"Saved: {save_path}")
-#     else:
-#         plt.show()
-
-#     plt.close()
-
-# --- add these defaults near visualize_surgery args (or keep as local constants inside) ---
-# (no comments requested, so just code)
 
 def visualize_surgery(
     image_path: str,

@@ -62,19 +62,31 @@ class Config:
     # MFI Loss (Sec. 4.2, Eq. 2)
     # λ = 0.2, α = 7e-5
     # ===================
-    mfi_lambda: float = 0.1
-    alpha: float = 7e-4
+    mfi_lambda: float = 0.2
+    alpha: float = 7e-5
     
-    # ===================
-    # Hard Negative Sampling (HNS)
-    # Upweight hard negatives (negatives with high positive probability)
-    # ===================
-    use_hns: bool = False           # Enable/disable HNS
-    hns_threshold: float = 0.5      # For threshold mode: negatives with prob > this are "hard"
-    hns_weight: float = 2.0         # Weight multiplier for hard negatives
-    hns_mode: str = "topk"     # "threshold", "topk", or "soft"
-    hns_topk_ratio: float = 0.5     # For topk mode: ratio of hardest negatives
+    # # ===================
+    # # Hard Negative Sampling (HNS)
+    # # Upweight hard negatives (negatives with high positive probability)
+    # # ===================
+    # use_hns: bool = False           # Enable/disable HNS
+    # hns_threshold: float = 0.5      # For threshold mode: negatives with prob > this are "hard"
+    # hns_weight: float = 2.0         # Weight multiplier for hard negatives
+    # hns_mode: str = "topk"     # "threshold", "topk", or "soft"
+    # hns_topk_ratio: float = 0.5     # For topk mode: ratio of hardest negatives
 
+    use_hns_asl: bool = False          # ASL HNS 켜기
+    asl_hns_threshold: float = 0.5
+    asl_hns_weight: float = 2.0
+    asl_hns_mode: str = "topk"        # "threshold" or "topk"
+    asl_hns_topk_ratio: float = 0.3   # 하위 30%의 어려운 샘플 집중
+
+    # ===================
+    # MFI HNS (Feature Decorrelation) - NEW
+    # ===================
+    use_hns_mfi: bool = True          # MFI HNS 켜기 (추천)
+    mfi_topk_ratio: float = 0.1       # 상위 10%의 높은 상관관계(Hard Pairs)만 집중 공격
+    mfi_clamp_min0: bool = True       # 양의 상관관계만 줄임 (음수는 허용)
     # ===================
     # Prompts (Sec. 3.2)
     # ===================
