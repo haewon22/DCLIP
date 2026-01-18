@@ -14,3 +14,7 @@ checkpoints/
 data/
 
 EOF
+
+# allow model checkpoints tracked via Git LFS
+!checkpoints/
+!checkpoints/*.pth
