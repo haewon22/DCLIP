@@ -44,7 +44,6 @@ class CLIPFeatureExtractor(nn.Module):
         self.clip_model, self.preprocess = clip.load(clip_model_name, device=device)
         self.clip_model.eval()
         
-        # Freeze CLIP
         for param in self.clip_model.parameters():
             param.requires_grad = False
         

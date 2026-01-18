@@ -1,20 +1,3 @@
-
-"""
-metric_dclip.py
-
-VOCSegmentation 기반 UnmixRate(= harmonic mean) 평가 유틸.
-
-지원 model_type:
-- "dclip"        : 당신 DCLIP 모델 객체 (models.DCLIP)
-- "clip"         : OpenAI CLIP 모델 (RN50/RN101 등)
-- "clip_surgery" : CLIP_Surgery 모델 (CS-RN101 등)
-
-UnmixRate 정의:
-    target_iou = IoU(target)
-    neg_term   = 1 - mean( IoU(similar_negative_classes) )
-    UnmixRate  = harmonic_mean(target_iou, neg_term)
-"""
-
 import os
 import numpy as np
 import pandas as pd
@@ -68,13 +51,7 @@ def top_n_similar(target: str, sim_df: pd.DataFrame, n: int):
     return out
 
 
-# ---------------------------------------------------------------------
-# Text feature fns (for similarity CSV)
-# ---------------------------------------------------------------------
 def make_text_features_fn(model, model_type: str, device=None):
-    """
-    Returns a function: f(class_names) -> (K,D) numpy normalized features
-    """
     device = device or get_device()
     model_type = str(model_type).lower()
 
@@ -87,8 +64,8 @@ def make_text_features_fn(model, model_type: str, device=None):
             feats = []
             for name in class_names:
                 idx = name_to_idx[name]
-                clip_feat = model.pos_text_features[idx:idx+1].to(device)   # (1,Dclip)
-                proj = model.text_projector(clip_feat.float())              # (1,C)
+                clip_feat = model.pos_text_features[idx:idx+1].to(device)
+                proj = model.text_projector(clip_feat.float())
                 proj = F.normalize(proj, dim=-1)
                 feats.append(proj.cpu().numpy())
             return np.concatenate(feats, axis=0)
@@ -152,15 +129,7 @@ def generate_similarity_csv(text_features_fn, model_name: str, out_dir="outputs"
     return out_csv
 
 
-# ---------------------------------------------------------------------
-# CLIP local tokens (vanilla clip)
-# ---------------------------------------------------------------------
 def encode_clip_local_tokens(clip_model, images: torch.Tensor) -> torch.Tensor:
-    """
-    Returns local tokens: (B,HW,D)
-    - ResNet: layer4 -> attnpool v_proj/c_proj (cls 제외)
-    - ViT: patch tokens
-    """
     visual = clip_model.visual
     is_resnet = hasattr(visual, "layer4")
 
@@ -181,8 +150,8 @@ def encode_clip_local_tokens(clip_model, images: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
         attnpool = visual.attnpool
 
-        tokens = x.reshape(B, C, H * W).permute(2, 0, 1)  # (HW,B,C)
-        tokens = torch.cat([tokens.mean(dim=0, keepdim=True), tokens], dim=0)  # (HW+1,B,C)
+        tokens = x.reshape(B, C, H * W).permute(2, 0, 1)
+        tokens = torch.cat([tokens.mean(dim=0, keepdim=True), tokens], dim=0) 
 
         pos_embed = attnpool.positional_embedding
         if pos_embed.shape[0] != H * W + 1:
@@ -198,10 +167,9 @@ def encode_clip_local_tokens(clip_model, images: torch.Tensor) -> torch.Tensor:
         tokens = F.linear(tokens, attnpool.v_proj.weight, attnpool.v_proj.bias)
         tokens = F.linear(tokens, attnpool.c_proj.weight, attnpool.c_proj.bias)
 
-        tokens = tokens[1:].permute(1, 0, 2)  # (B,HW,D)
+        tokens = tokens[1:].permute(1, 0, 2)
         return tokens
 
-    # ViT
     x = images.type(visual.conv1.weight.dtype)
     x = visual.conv1(x)
     x = x.reshape(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
@@ -223,17 +191,7 @@ def encode_clip_local_tokens(clip_model, images: torch.Tensor) -> torch.Tensor:
         tokens = tokens @ visual.proj
     return tokens
 
-
-# ---------------------------------------------------------------------
-# Segmentation fns
-# ---------------------------------------------------------------------
 def make_segment_fn(model, model_type: str, image_size=448, device=None):
-    """
-    Returns:
-        segment_fn(image_pil, target_class, negative_classes, threshold)->dict(name->bool mask)
-
-    DCLIP: class별 (neg,pos) 2-way softmax의 P(pos)로 마스크 생성(정합)
-    """
     device = device or get_device()
     model_type = str(model_type).lower()
 
@@ -252,8 +210,8 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
             classes = [target_class] + list(negative_classes)
             img = preprocess(image_pil.convert("RGB")).unsqueeze(0).to(device)
 
-            img_local = model.clip.encode_image_local(img)              # (1,HW,Dclip)
-            img_proj = model.image_projector(img_local.float())         # (1,HW,C)
+            img_local = model.clip.encode_image_local(img)
+            img_proj = model.image_projector(img_local.float())
             img_proj = F.normalize(img_proj, dim=-1)
 
             hw = img_proj.shape[1]
@@ -262,7 +220,7 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
             if h * w != hw:
                 h = w = int(hw ** 0.5)
 
-            W0, H0 = image_pil.size  # (W,H)
+            W0, H0 = image_pil.size 
             masks = {}
 
             for cname in classes:
@@ -270,15 +228,15 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
                 pos_clip = model.pos_text_features[idx:idx+1].to(device)
                 neg_clip = model.neg_text_features[idx:idx+1].to(device)
 
-                pos = F.normalize(model.text_projector(pos_clip.float()), dim=-1)  # (1,C)
+                pos = F.normalize(model.text_projector(pos_clip.float()), dim=-1)
                 neg = F.normalize(model.text_projector(neg_clip.float()), dim=-1)
 
-                sim_pos = (img_proj @ pos.t()).squeeze(-1) * temp  # (1,HW)
+                sim_pos = (img_proj @ pos.t()).squeeze(-1) * temp 
                 sim_neg = (img_proj @ neg.t()).squeeze(-1) * temp
 
                 prob_pos = torch.softmax(torch.stack([sim_neg, sim_pos], dim=-1), dim=-1)[..., 1]  # (1,HW)
 
-                m = prob_pos[0].reshape(h, w).detach().cpu().numpy()   # 0..1
+                m = prob_pos[0].reshape(h, w).detach().cpu().numpy()
                 m = (m * 255).astype(np.uint8)
                 m = np.array(Image.fromarray(m).resize((W0, H0), resample=Image.BICUBIC))
                 masks[cname] = (m > int(255 * threshold))
@@ -306,7 +264,7 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
             text_feat = model.encode_text(tok)
             text_feat = F.normalize(text_feat.float(), dim=-1)
 
-            sim = torch.matmul(tokens, text_feat.t())[0].cpu().numpy()  # (HW,N)
+            sim = torch.matmul(tokens, text_feat.t())[0].cpu().numpy() 
             hw = sim.shape[0]
             h = int(np.sqrt(hw))
             w = hw // h
@@ -361,9 +319,6 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
     raise ValueError("Unknown model_type: %s" % model_type)
 
 
-# ---------------------------------------------------------------------
-# Main runner
-# ---------------------------------------------------------------------
 def run_unmixrate_voc2007(
     model,
     model_type: str,
@@ -377,10 +332,6 @@ def run_unmixrate_voc2007(
     out_dir="outputs",
     image_size=448,
 ):
-    """
-    Returns:
-        df_results, avg_unmixrate, csv_path
-    """
     device = get_device()
     os.makedirs(out_dir, exist_ok=True)
 
@@ -396,7 +347,7 @@ def run_unmixrate_voc2007(
     results = []
     for i in range(total):
         image_pil, gt_mask_pil = voc[i]
-        gt = np.array(gt_mask_pil, dtype=np.uint8)  # 0..20,255
+        gt = np.array(gt_mask_pil, dtype=np.uint8)
 
         present = np.unique(gt).tolist()
         present = [p for p in present if p not in (0, 255)]

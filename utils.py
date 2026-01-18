@@ -92,10 +92,10 @@ def compute_clip_baseline_similarity(
 
     texts = [prompt_template.format(name) for name in class_names]
     tokens = clip_module.tokenize(texts).to(device)
-    text_features = clip_model.encode_text(tokens)            # (K,D)
+    text_features = clip_model.encode_text(tokens)    
     text_features = F.normalize(text_features.float(), dim=-1)
 
-    sim = text_features @ text_features.T                     # (K,K)
+    sim = text_features @ text_features.T             
     K = sim.shape[0]
     mask = 1.0 - torch.eye(K, device=sim.device)
     return ((sim * mask).sum() / (K * (K - 1))).item()

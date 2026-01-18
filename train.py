@@ -51,25 +51,6 @@ def train():
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,} ({trainable_params/1e6:.2f}M)")
     
-    # criterion = DCLIPLoss(
-    #     feat_dim=cfg.proj_dim,
-    #     alpha=cfg.alpha,
-    #     lambda_mfi=cfg.mfi_lambda,
-    #     gamma_neg=cfg.gamma_neg,
-    #     gamma_pos=cfg.gamma_pos,
-    #     clip=cfg.asl_clip,
-
-    #     # ASL쪽 HNS(topk) on/off
-    #     use_hns_asl=cfg.use_hns_asl,
-    #     asl_hns_weight=cfg.asl_hns_weight,
-    #     asl_hns_topk_ratio=cfg.asl_hns_topk_ratio,
-
-    #     # MFI쪽 HNS(topk+cube) on/off (포스터)
-    #     use_hns_mfi=cfg.use_hns_mfi,
-    #     mfi_topk=cfg.mfi_topk,
-    #     mfi_topk_ratio=cfg.mfi_topk_ratio,
-    #     mfi_clamp_min0=cfg.mfi_clamp_min0,
-    # ).to(device)
 
     criterion = DCLIPLoss(
         feat_dim=cfg.proj_dim,
@@ -79,14 +60,12 @@ def train():
         gamma_pos=cfg.gamma_pos,
         clip=cfg.asl_clip,
         
-        # === ASL (Classification) HNS Settings ===
         use_hns_asl=cfg.use_hns_asl,
         asl_hns_threshold=cfg.asl_hns_threshold,
         asl_hns_weight=cfg.asl_hns_weight,
         asl_hns_mode=cfg.asl_hns_mode,
         asl_hns_topk_ratio=cfg.asl_hns_topk_ratio,
 
-        # === MFI (Feature Decorrelation) HNS Settings ===
         use_hns_mfi=cfg.use_hns_mfi,
         mfi_topk_ratio=cfg.mfi_topk_ratio,
         mfi_clamp_min0=cfg.mfi_clamp_min0,
