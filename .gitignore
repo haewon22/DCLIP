@@ -18,3 +18,4 @@ EOF
 # allow model checkpoints tracked via Git LFS
 !checkpoints/
 !checkpoints/*.pth
+\!checkpoints_hns_proposed/*.pth
