@@ -5,184 +5,198 @@ import torch.nn.functional as F
 
 class AsymmetricLoss(nn.Module):
     def __init__(
-        self, 
-        gamma_neg: float = 2.0,  
-        gamma_pos: float = 1.0, 
-        clip: float = 0.05, 
-        eps: float = 1e-6, 
+        self,
+        gamma_neg: float = 2.0,
+        gamma_pos: float = 1.0,
+        clip: float = 0.05,
+        eps: float = 1e-6,
         disable_torch_grad_focal_loss: bool = True,
-        # HNS parameters
         use_hns: bool = False,
         hns_threshold: float = 0.5,
         hns_weight: float = 2.0,
-        hns_mode: str = "threshold",
+        hns_mode: str = "threshold",  
         hns_topk_ratio: float = 0.3,
     ):
         super().__init__()
-        self.gamma_neg = gamma_neg
-        self.gamma_pos = gamma_pos
-        self.clip = clip
-        self.eps = eps
-        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
+        self.gamma_neg = float(gamma_neg)
+        self.gamma_pos = float(gamma_pos)
+        self.clip = float(clip)
+        self.eps = float(eps)
+        self.disable_torch_grad_focal_loss = bool(disable_torch_grad_focal_loss)
+
+        self.use_hns = bool(use_hns)
+        self.hns_threshold = float(hns_threshold)
+        self.hns_weight = float(hns_weight)
+        self.hns_mode = str(hns_mode)
+        self.hns_topk_ratio = float(hns_topk_ratio)
+
         self.softmax = nn.Softmax(dim=1)
-        
-        self.use_hns = use_hns
-        self.hns_threshold = hns_threshold
-        self.hns_weight = hns_weight
-        self.hns_mode = hns_mode
-        self.hns_topk_ratio = hns_topk_ratio
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor, mask: torch.Tensor = None):
-        x_softmax = self.softmax(x)  
-        xs_pos = x_softmax[:, 1, :]
-        xs_neg = x_softmax[:, 0, :]
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+        if logits.dim() != 3 or logits.size(1) != 2:
+            raise ValueError(f"AsymmetricLoss expects logits [B,2,K], got {tuple(logits.shape)}")
+        if targets.dim() != 2:
+            raise ValueError(f"AsymmetricLoss expects targets [B,K], got {tuple(targets.shape)}")
 
-        y = y.reshape(-1).clone() 
-        xs_pos_flat = xs_pos.reshape(-1)
-        xs_neg_flat = xs_neg.reshape(-1)
+        probs = self.softmax(logits)  
+        p_pos = probs[:, 1, :].contiguous().reshape(-1) 
+        p_neg = probs[:, 0, :].contiguous().reshape(-1)
+
+        y = targets.reshape(-1).float().clone()
 
         if mask is not None:
-            mask_flat = mask.reshape(-1)
-            y[mask_flat == 0] = -1
+            m = mask.reshape(-1)
+            y[m == 0] = -1.0
 
-        valid_mask = (y != -1)
-        xs_pos_valid = xs_pos_flat[valid_mask]
-        xs_neg_valid = xs_neg_flat[valid_mask]
-        y_valid = y[valid_mask]
-        
-        num_valid = len(y_valid)
-        if num_valid == 0:
-            return x.sum() * 0.0 
+        valid = (y != -1.0)
+        if valid.sum().item() == 0:
+            return logits.sum() * 0.0
 
-        if self.clip is not None and self.clip > 0:
-            xs_neg_valid = (xs_neg_valid + self.clip).clamp(max=1)
+        yv = y[valid]
+        p_pos_v = p_pos[valid]
+        p_neg_v = p_neg[valid]
 
-        los_pos = y_valid * torch.log(xs_pos_valid.clamp(min=self.eps))
-        los_neg = (1 - y_valid) * torch.log(xs_neg_valid.clamp(min=self.eps))
-        loss = los_pos + los_neg
+        if self.clip and self.clip > 0:
+            p_neg_v = (p_neg_v + self.clip).clamp(max=1.0)
 
-        if self.gamma_neg > 0 or self.gamma_pos > 0:
+        los_pos = yv * torch.log(p_pos_v.clamp(min=self.eps))
+        los_neg = (1.0 - yv) * torch.log(p_neg_v.clamp(min=self.eps))
+        loss = los_pos + los_neg  
+
+        if (self.gamma_neg > 0) or (self.gamma_pos > 0):
             if self.disable_torch_grad_focal_loss:
-                torch.set_grad_enabled(False)
-            
-            pt0 = xs_pos_valid * y_valid
-            pt1 = xs_neg_valid * (1 - y_valid)
-            pt = pt0 + pt1
-            one_sided_gamma = self.gamma_pos * y_valid + self.gamma_neg * (1 - y_valid)
-            one_sided_w = torch.pow(1 - pt, one_sided_gamma)
-            
-            if self.disable_torch_grad_focal_loss:
-                torch.set_grad_enabled(True)
-            
-            loss *= one_sided_w
+                with torch.no_grad():
+                    pt = p_pos_v * yv + p_neg_v * (1.0 - yv)
+                    gamma = self.gamma_pos * yv + self.gamma_neg * (1.0 - yv)
+                    one_sided_w = (1.0 - pt).pow(gamma)
+            else:
+                pt = p_pos_v * yv + p_neg_v * (1.0 - yv)
+                gamma = self.gamma_pos * yv + self.gamma_neg * (1.0 - yv)
+                one_sided_w = (1.0 - pt).pow(gamma)
+
+            loss = loss * one_sided_w
 
         if self.use_hns:
-            hns_weights = self._compute_hns_weights(xs_pos_valid, y_valid)
-            loss = loss * hns_weights
+            w = self._compute_hns_weights(p_pos_v, yv)
+            loss = loss * w
 
-        return -loss.sum() / num_valid
+        return (-loss).mean()
 
-    def _compute_hns_weights(
-        self, 
-        xs_pos: torch.Tensor,
-        y: torch.Tensor, 
-    ) -> torch.Tensor:
-        weights = torch.ones_like(y, dtype=torch.float32)
-        
-        neg_mask = (y < 0.5) 
-        
-        if not neg_mask.any():
-            return weights
-        
-        neg_probs = xs_pos[neg_mask]
-        
+    def _compute_hns_weights(self, p_pos: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        w = torch.ones_like(y, dtype=torch.float32)
+        neg = (y < 0.5)
+        if not neg.any():
+            return w
+
+        neg_probs = p_pos[neg]
+
         if self.hns_mode == "threshold":
-            hard_neg_mask = neg_probs > self.hns_threshold
-            neg_weights = torch.ones_like(neg_probs)
-            neg_weights[hard_neg_mask] = self.hns_weight
-            weights[neg_mask] = neg_weights
-            
+            hard = neg_probs > self.hns_threshold
+            neg_w = torch.ones_like(neg_probs)
+            neg_w[hard] = self.hns_weight
+            w[neg] = neg_w
+
         elif self.hns_mode == "topk":
-            num_neg = len(neg_probs)
-            k = max(1, int(num_neg * self.hns_topk_ratio))
-            
-            if num_neg > 0:
-                _, topk_indices = torch.topk(neg_probs, k)
-                neg_weights = torch.ones_like(neg_probs)
-                neg_weights[topk_indices] = self.hns_weight
-                weights[neg_mask] = neg_weights
-                
+            n = neg_probs.numel()
+            k = max(1, int(n * self.hns_topk_ratio))
+            _, idx = torch.topk(neg_probs, k)
+            neg_w = torch.ones_like(neg_probs)
+            neg_w[idx] = self.hns_weight
+            w[neg] = neg_w
+
         elif self.hns_mode == "soft":
-            neg_weights = 1.0 + (self.hns_weight - 1.0) * neg_probs
-            weights[neg_mask] = neg_weights
-            
+            neg_w = 1.0 + (self.hns_weight - 1.0) * neg_probs
+            w[neg] = neg_w
+
         else:
-            raise ValueError(f"Unknown HNS mode: {self.hns_mode}")
-        
-        return weights
+            raise ValueError(f"Unknown hns_mode: {self.hns_mode}")
+
+        return w
 
 
 class MFILoss(nn.Module):
     def __init__(
-        self, 
-        feature_dim: int = 256, 
+        self,
+        feature_dim: int = 256,
         lambda_mfi: float = 0.2,
         use_hns: bool = False,
-        hns_topk_ratio: float = 0.5,  
-        clamp_min0: bool = True       
+        hns_topk_ratio: float = 0.5,
+        clamp_min0: bool = True,
+
+        mfi_hns_mode: str = "topk",
+        beta: float = 1.0,
+        eps: float = 1e-6,
+
+        mu_mode: str = "signed",      
+        scale_clamp_max: float = 0.0, 
     ):
         super().__init__()
-        self.lambda_mfi = lambda_mfi
-        self.bn = nn.BatchNorm1d(feature_dim, affine=False)
-        
-        self.use_hns = use_hns
-        self.hns_topk_ratio = hns_topk_ratio
-        self.clamp_min0 = clamp_min0
-    
-    def forward(self, text_features: torch.Tensor) -> torch.Tensor:
-        text_bn = self.bn(text_features)
-        c = torch.mm(text_bn.T, text_bn)
-        c = c / text_features.shape[0]
-        
-        feature_dim = c.shape[0]
-        
-        diagonal = torch.diag(c)
-        collapse_prevention = ((diagonal - 1.0) ** 2).sum()
+        self.lambda_mfi = float(lambda_mfi)
+        self.use_hns = bool(use_hns)
+        self.hns_topk_ratio = float(hns_topk_ratio)
+        self.clamp_min0 = bool(clamp_min0)
 
-        off_diagonal_mask = 1.0 - torch.eye(feature_dim, device=c.device)
-        
-        off_diag_c = c * off_diagonal_mask
-        
+        self.mfi_hns_mode = str(mfi_hns_mode)
+        self.beta = float(beta)
+        self.eps = float(eps)
+        self.mu_mode = str(mu_mode)
+        self.scale_clamp_max = float(scale_clamp_max)
+
+        self.bn = nn.BatchNorm1d(feature_dim, affine=False)
+
+    def forward(self, text_features: torch.Tensor) -> torch.Tensor:
+        if self.use_hns and self.mfi_hns_mode == "proposed":
+            t = F.normalize(text_features.float(), dim=-1) 
+            S = t @ t.t()                                  
+            M = S.size(0)
+
+            diag = torch.diagonal(S)
+            collapse_prevention = (diag - 1.0).pow(2).sum()
+
+            mask = ~torch.eye(M, device=S.device, dtype=torch.bool)
+            off = S[mask].view(M, M - 1)
+
+            if self.clamp_min0:
+                off = off.clamp(min=0.0)
+
+            if self.mu_mode == "signed":
+                mu = off.mean(dim=1, keepdim=True)
+            elif self.mu_mode == "abs":
+                mu = off.abs().mean(dim=1, keepdim=True)
+            elif self.mu_mode == "pos":
+                mu = F.relu(off).mean(dim=1, keepdim=True)
+            else:
+                raise ValueError(f"Unknown mu_mode: {self.mu_mode}")
+
+            scale = self.beta / (mu + self.eps)
+            if self.scale_clamp_max and self.scale_clamp_max > 0:
+                scale = scale.clamp(min=-self.scale_clamp_max, max=self.scale_clamp_max)
+
+            hns_term = (scale * off.pow(3)).sum()
+
+            return collapse_prevention + self.lambda_mfi * hns_term
+
+        text_bn = self.bn(text_features)
+        C = (text_bn.T @ text_bn) / text_features.shape[0]
+
+        diag = torch.diagonal(C)
+        collapse_prevention = (diag - 1.0).pow(2).sum()
+
+        D = C.size(0)
+        off = C * (1.0 - torch.eye(D, device=C.device))
+
         if self.clamp_min0:
-            off_diag_c = off_diag_c.clamp(min=0)
+            off = off.clamp(min=0.0)
 
         if self.use_hns:
-            flat_c = off_diag_c.view(-1)
-            flat_c_sq = flat_c.pow(2)
-            
-            num_elements = flat_c.numel()
-            k = max(1, int(num_elements * self.hns_topk_ratio))
-            
-            topk_values, _ = torch.topk(flat_c_sq, k)
-            
-            mfi_reduction = topk_values.sum()
-
+            flat = off.reshape(-1).pow(2)
+            k = max(1, int(flat.numel() * self.hns_topk_ratio))
+            topk_vals, _ = torch.topk(flat, k)
+            reduction = topk_vals.sum()
         else:
-            mfi_reduction = off_diag_c.pow(2).sum()
-        
-        loss = collapse_prevention + self.lambda_mfi * mfi_reduction
-        
-        return loss
+            reduction = off.pow(2).sum()
 
-    @torch.no_grad()
-    def inter_class_similarity(self, text_features: torch.Tensor) -> float:
-        text_norm = F.normalize(text_features, dim=-1)
-        sim_matrix = torch.mm(text_norm, text_norm.T)
-        num_classes = sim_matrix.shape[0]
-        mask = 1.0 - torch.eye(num_classes, device=sim_matrix.device)
-        off_diagonal_sum = (sim_matrix * mask).sum()
-        num_off_diagonal = num_classes * (num_classes - 1)
-        return (off_diagonal_sum / num_off_diagonal).item()
+        return collapse_prevention + self.lambda_mfi * reduction
 
 
 class DCLIPLoss(nn.Module):
@@ -191,10 +205,10 @@ class DCLIPLoss(nn.Module):
         feat_dim: int = 256,
         alpha: float = 7e-5,
         lambda_mfi: float = 0.2,
-        gamma_neg: float = 2.0, 
+        gamma_neg: float = 2.0,
         gamma_pos: float = 1.0,
         clip: float = 0.05,
-        
+
         use_hns_asl: bool = False,
         asl_hns_threshold: float = 0.5,
         asl_hns_weight: float = 2.0,
@@ -204,18 +218,17 @@ class DCLIPLoss(nn.Module):
         use_hns_mfi: bool = False,
         mfi_topk_ratio: float = 0.3,
         mfi_clamp_min0: bool = True,
+
+        mfi_hns_mode: str = "topk",
+        mfi_beta: float = 1.0,
+        mfi_eps: float = 1e-6,
+        mfi_mu_mode: str = "signed",
+        mfi_scale_clamp_max: float = 0.0,
     ):
         super().__init__()
-        self.alpha = alpha
-        
-        self.mfi = MFILoss(
-            feature_dim=feat_dim, 
-            lambda_mfi=lambda_mfi,
-            use_hns=use_hns_mfi,
-            hns_topk_ratio=mfi_topk_ratio,
-            clamp_min0=mfi_clamp_min0
-        )
-        
+        self.alpha = float(alpha)
+        self.mfi_hns_mode = str(mfi_hns_mode)
+
         self.asl = AsymmetricLoss(
             gamma_neg=gamma_neg,
             gamma_pos=gamma_pos,
@@ -226,22 +239,38 @@ class DCLIPLoss(nn.Module):
             hns_mode=asl_hns_mode,
             hns_topk_ratio=asl_hns_topk_ratio,
         )
-    
-    def forward(self, logits, targets, text_features_2k, mask=None):
+
+        self.mfi = MFILoss(
+            feature_dim=feat_dim,
+            lambda_mfi=lambda_mfi,
+            use_hns=use_hns_mfi,
+            hns_topk_ratio=mfi_topk_ratio,
+            clamp_min0=mfi_clamp_min0,
+            mfi_hns_mode=mfi_hns_mode,
+            beta=mfi_beta,
+            eps=mfi_eps,
+            mu_mode=mfi_mu_mode,
+            scale_clamp_max=mfi_scale_clamp_max,
+        )
+
+    def forward(self, logits, targets, text_features_2k, pos_text_features=None, mask=None):
         asl_loss = self.asl(logits, targets, mask=mask)
-        mfi_loss = self.mfi(text_features_2k)
+
+        if self.mfi_hns_mode == "proposed" and (pos_text_features is not None):
+            mfi_inp = pos_text_features
+        else:
+            mfi_inp = text_features_2k
+
+        mfi_loss = self.mfi(mfi_inp)
         total_loss = asl_loss + self.alpha * mfi_loss
-        return total_loss, asl_loss.item(), mfi_loss.item()
+        return total_loss, float(asl_loss.item()), float(mfi_loss.item())
 
 
+@torch.no_grad()
 def compute_inter_class_similarity(text_features: torch.Tensor) -> float:
-    with torch.no_grad():
-        text_norm = F.normalize(text_features, dim=-1)
-        sim_matrix = torch.mm(text_norm, text_norm.T)
-        
-        num_classes = sim_matrix.shape[0]
-        mask = 1.0 - torch.eye(num_classes, device=sim_matrix.device)
-        off_diagonal_sum = (sim_matrix * mask).sum()
-        num_off_diagonal = num_classes * (num_classes - 1)
-        
-        return (off_diagonal_sum / num_off_diagonal).item()
+    t = F.normalize(text_features.float(), dim=-1)
+    S = t @ t.t()
+    K = S.size(0)
+    mask = 1.0 - torch.eye(K, device=S.device)
+    off_sum = (S * mask).sum()
+    return (off_sum / (K * (K - 1))).item()

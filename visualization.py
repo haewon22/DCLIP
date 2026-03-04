@@ -256,7 +256,7 @@ def main():
         device=device,
     )
 
-    ckpt_path = "./checkpoints/best_model.pth"
+    ckpt_path = "/workspace/DCLIP/checkpoints/best_model_original_94.16.pth"
     if os.path.exists(ckpt_path):
         print(f"Loading checkpoint: {ckpt_path}")
         ckpt = torch.load(ckpt_path, map_location=device)

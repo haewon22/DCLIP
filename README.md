@@ -21,7 +21,8 @@ This allows DCLIP to improve **classification** (e.g., VOC2007 mAP) while also s
 
 ## Visualization (Surgery-style)
 
-This repo produces **CLIP Feature Surgery–style** activation maps in the **projected space (256-d)**, which matches the paper’s visualization direction and is also used for UnmixRate mask generation in this implementation.
+This repo produces CLIP Feature Surgery–style activation maps in the projected space (256-d), which matches the paper’s visualization direction and is also used for UnmixRate mask generation in this implementation.
+
 
 ![DCLIP unified visualization](visualizations/dclip_visualization_unified.png)
 
@@ -56,18 +57,19 @@ This repo also includes a small **synthetic demo cell** to illustrate cases wher
 ---
 
 ## What is HNS?
-> Note: **HNS is an extension proposed in this repository** (not from the original DCLIP paper).
+> Note: **HNS is an extension explored in this repository** (not from the original DCLIP paper).
 
-**HNS (Hard Negative Sampling)** is a simple strategy to focus learning on “hard” negatives:
+This repo contains two usages that historically shared the name “HNS”:
 
-- **ASL-HNS (classification loss)**: among negative labels, up-weight negatives that the model currently predicts as high probability (i.e., likely false positives).  
-  Supported modes in this repo:
+- **ASL-HNS (Hard Negative reweighting)**: among negative labels, up-weight negatives that the model currently predicts as high probability (likely false positives).  
+  Supported modes:
   - `threshold`: up-weight negatives with `p(pos) > threshold`
   - `topk`: up-weight top-k fraction of negatives by `p(pos)`
   - `soft`: smoothly weight by probability
 
-- **MFI-HNS (text disentanglement loss)**: in the MFI off-diagonal correlation terms, focus on the largest offenders (top-k fraction) rather than summing all off-diagonals equally.  
-  This tends to target the most entangled class pairs first.
+- **MFI-HNS**:
+  - `topk` mode: focuses the MFI off-diagonal penalty on the largest offenders (top-k fraction) rather than summing all off-diagonals equally.
+  - `proposed` mode: implements the paper-PDF-inspired **cubic similarity** regularizer (s^3 with normalization) to emphasize highly entangled class pairs.
 
 All HNS knobs are exposed in `config.py`.
 
@@ -75,7 +77,7 @@ All HNS knobs are exposed in `config.py`.
 
 ## Result highlight (this implementation)
 
-- In my experiments, **this DCLIP implementation achieved strong mAP**, and also showed **high UnmixRate**, indicating improved separation from confusing negatives under the leakage-aware metric.
+- In my experiments, this DCLIP implementation achieved **strong VOC2007 mAP** and supports leakage-aware analysis via **UnmixRate / TargetIoU / Leakage**.
 
 ---
 
@@ -98,13 +100,20 @@ python train.py
 ### 3) Evaluate
 
 - **mAP**: VOC2007 classification (test split)
-- **UnmixRate**: VOCSegmentation-based evaluation (commonly on `val` or `test`; see notes below)
+- **UnmixRate**: VOCSegmentation-based evaluation (commonly on `val` or `test`)
 
-If you use the notebook, it runs end-to-end:
-- model loading
-- mAP evaluation
-- UnmixRate evaluation
-- supplementary UnmixRate vs IoU demo
+Recommended (terminal-friendly) evaluation script:
+
+```bash
+python run_results.py \
+  --voc-root ./data \
+  --voc2007-root ./data/VOCdevkit/VOC2007 \
+  --dclip-ckpt checkpoints/best_model.pth \
+  --dclip-hns-ckpt checkpoints_hns_proposed/best_model.pth \
+  --thr 0.5 --topn 5 --unmix-split val \
+  --max-images 200 \
+  --out-dir outputs
+```
 
 ---
 

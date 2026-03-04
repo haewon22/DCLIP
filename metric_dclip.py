@@ -234,7 +234,7 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
                 sim_pos = (img_proj @ pos.t()).squeeze(-1) * temp 
                 sim_neg = (img_proj @ neg.t()).squeeze(-1) * temp
 
-                prob_pos = torch.softmax(torch.stack([sim_neg, sim_pos], dim=-1), dim=-1)[..., 1]  # (1,HW)
+                prob_pos = torch.softmax(torch.stack([sim_neg, sim_pos], dim=-1), dim=-1)[..., 1] 
 
                 m = prob_pos[0].reshape(h, w).detach().cpu().numpy()
                 m = (m * 255).astype(np.uint8)
@@ -305,7 +305,7 @@ def make_segment_fn(model, model_type: str, image_size=448, device=None):
 
             text_features = CLIPS.encode_text_with_prompt_ensemble(model, texts, device)
             similarity = CLIPS.clip_feature_surgery(image_features, text_features)
-            similarity_map = CLIPS.get_similarity_map(similarity[:, 1:, :], cv2_img.shape[:2])  # (1,H,W,N)
+            similarity_map = CLIPS.get_similarity_map(similarity[:, 1:, :], cv2_img.shape[:2]) 
 
             masks = {}
             for n, name in enumerate(texts):
